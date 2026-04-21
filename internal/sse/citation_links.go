@@ -7,14 +7,12 @@ import (
 
 type citationLinkCollector struct {
 	ordered     []string
-	seen        map[string]struct{}
 	explicitRaw map[int]string
 	hasZeroIdx  bool
 }
 
 func newCitationLinkCollector() *citationLinkCollector {
 	return &citationLinkCollector{
-		seen:        map[string]struct{}{},
 		explicitRaw: map[int]string{},
 	}
 }
@@ -129,10 +127,6 @@ func (c *citationLinkCollector) captureURLAndIndex(m map[string]any) {
 }
 
 func (c *citationLinkCollector) addOrdered(url string) {
-	if _, ok := c.seen[url]; ok {
-		return
-	}
-	c.seen[url] = struct{}{}
 	c.ordered = append(c.ordered, url)
 }
 
