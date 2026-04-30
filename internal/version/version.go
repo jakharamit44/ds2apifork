@@ -1,12 +1,15 @@
 package version
 
 import (
+	"encoding/json"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // BuildVersion can be injected at build time via -ldflags.
@@ -18,6 +21,30 @@ var (
 	currentVal  string
 	sourceVal   string
 )
+
+// githubRelease struct to parse the JSON response from GitHub API
+type githubRelease struct {
+	TagName string `json:"tag_name"`
+}
+
+// fetchLatestFromGitHub automatically fetches the latest release tag
+// to handle Vercel deployments where the VERSION file is stripped and no tag env is present.
+func fetchLatestFromGitHub() string {
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get("https://api.github.com/repos/CJackHwang/ds2api/releases/latest")
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK {
+		var release githubRelease
+		if err := json.NewDecoder(resp.Body).Decode(&release); err == nil {
+			return normalize(release.TagName)
+		}
+	}
+	return ""
+}
 
 func Current() (value string, source string) {
 	currentOnce.Do(func() {
@@ -33,10 +60,27 @@ func Current() (value string, source string) {
 		}
 
 		if vv := versionFromVercelEnv(); vv != "" {
+			// If Vercel env returns a preview (meaning no explicit tag was found),
+			// we attempt to auto-fetch the latest tag from GitHub releases.
+			if strings.HasPrefix(vv, "preview-") {
+				if ghTag := fetchLatestFromGitHub(); ghTag != "" {
+					currentVal = ghTag
+					sourceVal = "auto-fetch-github"
+					return
+				}
+			}
 			currentVal = vv
 			sourceVal = "env:vercel"
 			return
 		}
+		
+		// Final fallback for local dev or if GitHub API fails
+		if ghTag := fetchLatestFromGitHub(); ghTag != "" {
+			currentVal = ghTag
+			sourceVal = "auto-fetch-github-fallback"
+			return
+		}
+
 		currentVal = "dev"
 		sourceVal = "default"
 	})
