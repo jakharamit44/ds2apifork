@@ -231,6 +231,28 @@ test('parseToolCalls treats single-item CDATA body as array', () => {
   assert.deepEqual(calls[0].input.todos, ['one']);
 });
 
+test('parseToolCalls treats loose JSON list as array', () => {
+  for (const [label, body] of [
+    ['plain text', '{"content":"Test TodoWrite tool","status":"completed"}, {"content":"Another task","status":"pending"}'],
+    ['cdata', '<![CDATA[{"content":"Test TodoWrite tool","status":"completed"}, {"content":"Another task","status":"pending"}]]>'],
+  ]) {
+    const payload = `<tool_calls><invoke name="TodoWrite"><parameter name="todos">${body}</parameter></invoke></tool_calls>`;
+    const calls = parseToolCalls(payload, ['TodoWrite']);
+    assert.equal(calls.length, 1, label);
+    assert.deepEqual(calls[0].input.todos, [
+      { content: 'Test TodoWrite tool', status: 'completed' },
+      { content: 'Another task', status: 'pending' },
+    ]);
+  }
+});
+
+test('parseToolCalls keeps preserved text parameters as text', () => {
+  const payload = '<tool_calls><invoke name="Write"><parameter name="content"><![CDATA[{"content":"Test TodoWrite tool","status":"completed"}, {"content":"Another task","status":"pending"}]]></parameter></invoke></tool_calls>';
+  const calls = parseToolCalls(payload, ['Write']);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].input.content, '{"content":"Test TodoWrite tool","status":"completed"}, {"content":"Another task","status":"pending"}');
+});
+
 test('formatOpenAIStreamToolCalls normalizes camelCase inputSchema string fields', () => {
   const formatted = formatOpenAIStreamToolCalls([
     { name: 'Write', input: { content: { message: 'hi' }, taskId: 1 } },

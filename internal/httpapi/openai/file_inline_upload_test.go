@@ -94,6 +94,9 @@ func TestPreprocessInlineFileInputsReplacesDataURLAndCollectsRefFileIDs(t *testi
 	if len(ds.uploadCalls) != 1 {
 		t.Fatalf("expected 1 upload, got %d", len(ds.uploadCalls))
 	}
+	if ds.uploadCalls[0].ModelType != "default" {
+		t.Fatalf("expected default model type when request omits model, got %q", ds.uploadCalls[0].ModelType)
+	}
 	if ds.lastCtx != ctx {
 		t.Fatalf("expected upload to use request context")
 	}
@@ -149,7 +152,7 @@ func TestPreprocessInlineFileInputsDeduplicatesIdenticalPayloads(t *testing.T) {
 func TestChatCompletionsUploadsInlineFilesBeforeCompletion(t *testing.T) {
 	ds := &inlineUploadDSStub{}
 	h := &openAITestSurface{Store: mockOpenAIConfig{wideInput: true}, Auth: streamStatusAuthStub{}, DS: ds}
-	reqBody := `{"model":"deepseek-v4-flash","messages":[{"role":"user","content":[{"type":"input_text","text":"hi"},{"type":"image_url","image_url":{"url":"data:image/png;base64,QUJDRA=="}}]}],"stream":false}`
+	reqBody := `{"model":"deepseek-v4-vision","messages":[{"role":"user","content":[{"type":"input_text","text":"hi"},{"type":"image_url","image_url":{"url":"data:image/png;base64,QUJDRA=="}}]}],"stream":false}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(reqBody))
 	req.Header.Set("Authorization", "Bearer direct-token")
 	req.Header.Set("Content-Type", "application/json")
@@ -162,6 +165,9 @@ func TestChatCompletionsUploadsInlineFilesBeforeCompletion(t *testing.T) {
 	}
 	if len(ds.uploadCalls) != 1 {
 		t.Fatalf("expected 1 upload call, got %d", len(ds.uploadCalls))
+	}
+	if ds.uploadCalls[0].ModelType != "vision" {
+		t.Fatalf("expected vision model type for vision request, got %q", ds.uploadCalls[0].ModelType)
 	}
 	if ds.completionReq == nil {
 		t.Fatal("expected completion payload to be captured")
@@ -177,7 +183,7 @@ func TestResponsesUploadsInlineFilesBeforeCompletion(t *testing.T) {
 	h := &openAITestSurface{Store: mockOpenAIConfig{wideInput: true}, Auth: streamStatusAuthStub{}, DS: ds}
 	r := chi.NewRouter()
 	registerOpenAITestRoutes(r, h)
-	reqBody := `{"model":"deepseek-v4-flash","input":[{"role":"user","content":[{"type":"input_text","text":"hi"},{"type":"input_image","image_url":{"url":"data:image/png;base64,QUJDRA=="}}]}],"stream":false}`
+	reqBody := `{"model":"deepseek-v4-pro","input":[{"role":"user","content":[{"type":"input_text","text":"hi"},{"type":"input_image","image_url":{"url":"data:image/png;base64,QUJDRA=="}}]}],"stream":false}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(reqBody))
 	req.Header.Set("Authorization", "Bearer direct-token")
 	req.Header.Set("Content-Type", "application/json")
@@ -190,6 +196,9 @@ func TestResponsesUploadsInlineFilesBeforeCompletion(t *testing.T) {
 	}
 	if len(ds.uploadCalls) != 1 {
 		t.Fatalf("expected 1 upload call, got %d", len(ds.uploadCalls))
+	}
+	if ds.uploadCalls[0].ModelType != "expert" {
+		t.Fatalf("expected expert model type for pro request, got %q", ds.uploadCalls[0].ModelType)
 	}
 	refIDs, _ := ds.completionReq["ref_file_ids"].([]any)
 	if len(refIDs) != 1 || refIDs[0] != "file-inline-1" {

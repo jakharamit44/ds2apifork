@@ -294,6 +294,59 @@ func TestParseToolCallsTreatsSingleItemCDATAAsArray(t *testing.T) {
 	}
 }
 
+func TestParseToolCallsTreatsLooseJSONListAsArray(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "plain text",
+			body: `{"content":"Test TodoWrite tool","status":"completed"}, {"content":"Another task","status":"pending"}`,
+		},
+		{
+			name: "cdata",
+			body: `<![CDATA[{"content":"Test TodoWrite tool","status":"completed"}, {"content":"Another task","status":"pending"}]]>`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			text := `<tool_calls><invoke name="TodoWrite"><parameter name="todos">` + tt.body + `</parameter></invoke></tool_calls>`
+			calls := ParseToolCalls(text, []string{"TodoWrite"})
+			if len(calls) != 1 {
+				t.Fatalf("expected one TodoWrite call, got %#v", calls)
+			}
+			items, ok := calls[0].Input["todos"].([]any)
+			if !ok || len(items) != 2 {
+				t.Fatalf("expected loose JSON list to parse as array, got %#v", calls[0].Input["todos"])
+			}
+			first, ok := items[0].(map[string]any)
+			if !ok {
+				t.Fatalf("expected first todo object, got %#v", items[0])
+			}
+			if first["content"] != "Test TodoWrite tool" || first["status"] != "completed" {
+				t.Fatalf("unexpected first todo: %#v", first)
+			}
+		})
+	}
+}
+
+func TestParseToolCallsKeepsPreservedTextParametersAsText(t *testing.T) {
+	text := `<tool_calls><invoke name="Write"><parameter name="content"><![CDATA[{"content":"Test TodoWrite tool","status":"completed"}, {"content":"Another task","status":"pending"}]]></parameter></invoke></tool_calls>`
+	calls := ParseToolCalls(text, []string{"Write"})
+	if len(calls) != 1 {
+		t.Fatalf("expected one Write call, got %#v", calls)
+	}
+	got, ok := calls[0].Input["content"].(string)
+	if !ok {
+		t.Fatalf("expected content to stay a string, got %#v", calls[0].Input["content"])
+	}
+	want := `{"content":"Test TodoWrite tool","status":"completed"}, {"content":"Another task","status":"pending"}`
+	if got != want {
+		t.Fatalf("expected content to stay raw, got %q", got)
+	}
+}
+
 func TestParseToolCallsTreatsCDATAObjectFragmentAsObject(t *testing.T) {
 	payload := `<question><![CDATA[Pick one]]></question><options><item><label><![CDATA[A]]></label></item><item><label><![CDATA[B]]></label></item></options>`
 	text := `<tool_calls><invoke name="AskUserQuestion"><parameter name="questions"><![CDATA[` + payload + `]]></parameter></invoke></tool_calls>`

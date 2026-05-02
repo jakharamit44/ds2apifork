@@ -2,8 +2,8 @@ package gemini
 
 import (
 	"bytes"
-	"ds2api/internal/toolcall"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,7 +11,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"ds2api/internal/httpapi/requestbody"
 	"ds2api/internal/sse"
+	"ds2api/internal/toolcall"
 	"ds2api/internal/translatorcliproxy"
 	"ds2api/internal/util"
 
@@ -32,7 +34,11 @@ func (h *Handler) handleGenerateContent(w http.ResponseWriter, r *http.Request, 
 func (h *Handler) proxyViaOpenAI(w http.ResponseWriter, r *http.Request, stream bool) bool {
 	raw, err := io.ReadAll(r.Body)
 	if err != nil {
-		writeGeminiError(w, http.StatusBadRequest, "invalid body")
+		if errors.Is(err, requestbody.ErrInvalidUTF8Body) {
+			writeGeminiError(w, http.StatusBadRequest, "invalid json")
+		} else {
+			writeGeminiError(w, http.StatusBadRequest, "invalid body")
+		}
 		return true
 	}
 	routeModel := strings.TrimSpace(chi.URLParam(r, "model"))

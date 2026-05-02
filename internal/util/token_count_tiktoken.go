@@ -4,8 +4,14 @@ package util
 
 import (
 	"strings"
+	"sync"
 
 	tiktoken "github.com/hupe1980/go-tiktoken"
+)
+
+var (
+	tokenEncodingPools       sync.Map
+	tokenEncodingUnsupported sync.Map
 )
 
 func countWithTokenizer(text, model string) int {
@@ -13,15 +19,63 @@ func countWithTokenizer(text, model string) int {
 	if text == "" {
 		return 0
 	}
-	encoding, err := tiktoken.NewEncodingForModel(tokenizerModelForCount(model))
-	if err != nil {
+	encoding, release := tokenizerEncodingForCount(tokenizerModelForCount(model))
+	if encoding == nil {
 		return 0
 	}
+	defer release()
 	ids, _, err := encoding.Encode(text, nil, nil)
 	if err != nil {
 		return 0
 	}
 	return len(ids)
+}
+
+func tokenizerEncodingForCount(model string) (*tiktoken.Encoding, func()) {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		model = defaultTokenizerModel
+	}
+	if _, ok := tokenEncodingUnsupported.Load(model); ok {
+		return nil, func() {}
+	}
+	if rawPool, ok := tokenEncodingPools.Load(model); ok {
+		pool, _ := rawPool.(*sync.Pool)
+		return getEncodingFromPool(pool)
+	}
+
+	encoding, err := tiktoken.NewEncodingForModel(model)
+	if err != nil {
+		tokenEncodingUnsupported.Store(model, struct{}{})
+		return nil, func() {}
+	}
+	pool := &sync.Pool{
+		New: func() any {
+			encoding, err := tiktoken.NewEncodingForModel(model)
+			if err != nil {
+				return nil
+			}
+			return encoding
+		},
+	}
+	actualPool, _ := tokenEncodingPools.LoadOrStore(model, pool)
+	pool, _ = actualPool.(*sync.Pool)
+	return encoding, func() {
+		pool.Put(encoding)
+	}
+}
+
+func getEncodingFromPool(pool *sync.Pool) (*tiktoken.Encoding, func()) {
+	if pool == nil {
+		return nil, func() {}
+	}
+	encoding, _ := pool.Get().(*tiktoken.Encoding)
+	if encoding == nil {
+		return nil, func() {}
+	}
+	return encoding, func() {
+		pool.Put(encoding)
+	}
 }
 
 func tokenizerModelForCount(model string) string {

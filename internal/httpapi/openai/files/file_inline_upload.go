@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"ds2api/internal/auth"
+	"ds2api/internal/config"
 	dsclient "ds2api/internal/deepseek/client"
 	"ds2api/internal/httpapi/openai/shared"
 	"ds2api/internal/promptcompat"
@@ -42,6 +43,7 @@ type inlineUploadState struct {
 	ctx             context.Context
 	handler         *Handler
 	auth            *auth.RequestAuth
+	modelType       string
 	uploadedByID    map[string]string
 	uploadCount     int
 	inlineFileBytes int
@@ -58,10 +60,19 @@ func (h *Handler) PreprocessInlineFileInputs(ctx context.Context, a *auth.Reques
 	if h == nil || h.DS == nil || len(req) == 0 {
 		return nil
 	}
+	modelType := "default"
+	if requestedModel, ok := req["model"].(string); ok {
+		if resolvedModel, ok := config.ResolveModel(h.Store, requestedModel); ok {
+			if resolvedType, ok := config.GetModelType(resolvedModel); ok {
+				modelType = resolvedType
+			}
+		}
+	}
 	state := &inlineUploadState{
 		ctx:          ctx,
 		handler:      h,
 		auth:         a,
+		modelType:    modelType,
 		uploadedByID: map[string]string{},
 	}
 	for _, key := range []string{"messages", "input", "attachments"} {
@@ -174,6 +185,7 @@ func (s *inlineUploadState) uploadInlineFile(file inlineDecodedFile) (string, er
 	result, err := s.handler.DS.UploadFile(s.ctx, s.auth, dsclient.UploadFileRequest{
 		Filename:    file.Filename,
 		ContentType: contentType,
+		ModelType:   s.modelType,
 		Data:        file.Data,
 	}, 3)
 	if err != nil {

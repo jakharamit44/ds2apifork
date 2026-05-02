@@ -222,7 +222,13 @@ func (h *Handler) consumeResponsesStreamAttempt(r *http.Request, resp *http.Resp
 				finalReason = "content_filter"
 			}
 		},
+		OnContextDone: func() {
+			streamRuntime.markContextCancelled()
+		},
 	})
+	if streamRuntime.finalErrorCode == string(streamengine.StopReasonContextCancelled) {
+		return true, false
+	}
 	terminalWritten := streamRuntime.finalize(finalReason, allowDeferEmpty && finalReason != "content_filter")
 	if terminalWritten {
 		return true, false
@@ -234,6 +240,10 @@ func logResponsesStreamTerminal(streamRuntime *responsesStreamRuntime, attempts 
 	source := "first_attempt"
 	if attempts > 0 {
 		source = "synthetic_retry"
+	}
+	if streamRuntime.finalErrorCode == string(streamengine.StopReasonContextCancelled) {
+		config.Logger.Info("[openai_empty_retry] terminal cancelled", "surface", "responses", "stream", true, "retry_attempts", attempts, "error_code", streamRuntime.finalErrorCode)
+		return
 	}
 	if streamRuntime.failed {
 		config.Logger.Info("[openai_empty_retry] terminal empty output", "surface", "responses", "stream", true, "retry_attempts", attempts, "success_source", "none", "error_code", streamRuntime.finalErrorCode)
